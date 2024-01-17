@@ -85,6 +85,9 @@ urlpatterns = (
 
             # 仅用于开发，上线需关闭
             path("api/token/", LoginTokenView.as_view()),
+
+            # 自定义的APP路由
+            path('api/baseInfo/', include('dvadmin.baseInfo.urls')),
         ]
         + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
         + static(settings.STATIC_URL, document_root=settings.STATIC_URL)

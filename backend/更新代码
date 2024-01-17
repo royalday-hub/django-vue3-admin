@@ -1,0 +1,12 @@
+git fetch origin foo
+
+git fetch origin <source>:<destination>
+
+使用git remote -v查看所有仓库名称
+source是远端源仓库
+origin是远端自己的仓库
+origin为仓库名 source为远程分支，destination为本地分支
+
+拉取远端源仓库更新代码
+eg.  git fetch origin foo~1:bar
+git会将远程分支foo的前一个版本的所有提交下载到本地分支bar中。如果本地分支bar不存在，则会新建一个新分支bar。

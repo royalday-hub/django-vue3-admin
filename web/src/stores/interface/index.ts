@@ -102,3 +102,12 @@ export interface DictionaryStates {
 export interface ConfigStates {
 	systemConfig: any;
 }
+
+export interface ProjectStates {
+	id: number;
+	name: string;
+}
+
+export interface BaseInfosStates {
+	projects: ProjectStates[];
+}

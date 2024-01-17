@@ -64,7 +64,7 @@ class SoftDeleteModel(models.Model):
         self.save(using=using)
 
 
-class CoreModel(models.Model):
+class CoreModel(SoftDeleteModel, models.Model):
     """
     核心标准抽象模型模型,可直接继承使用
     增加审计字段, 覆盖字段时, 字段名称请勿修改, 必须统一审计字段名称
