@@ -5,7 +5,7 @@ export const apiPrefix = '/api/system/user/';
 
 export function GetDept(query: PageQuery) {
     return request({
-        url: "/api/system/dept/dept_lazy_tree/",
+        url: "/api/system/dept/all_dept/",
         method: 'get',
         params: query,
     });
@@ -54,5 +54,13 @@ export function exportData(params:any){
         url: apiPrefix + 'export_data/',
         params: params,
         method: 'get'
+    })
+}
+
+
+export function resetToDefaultPassword(id:any){
+    return request({
+        url: apiPrefix  + id + '/reset_to_default_password/',
+        method: 'put'
     })
 }

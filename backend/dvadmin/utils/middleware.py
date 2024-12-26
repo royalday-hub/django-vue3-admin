@@ -2,9 +2,11 @@
 日志 django中间件
 """
 import json
+import logging
 
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
+from django.http import HttpResponse, HttpResponseServerError
 from django.utils.deprecation import MiddlewareMixin
 
 from dvadmin.system.models import OperationLog
@@ -30,6 +32,14 @@ class ApiLoggingMiddleware(MiddlewareMixin):
         request.request_path = get_request_path(request)
 
     def __handle_response(self, request, response):
+
+        # 判断有无log_id属性，使用All记录时，会出现此情况
+        if request.request_data.get('log_id', None) is None:
+            return
+        
+        # 移除log_id，不记录此ID
+        log_id = request.request_data.pop('log_id')
+
         # request_data,request_ip由PermissionInterfaceMiddleware中间件中添加的属性
         body = getattr(request, 'request_data', {})
         # 请求含有password则用*替换掉(暂时先用于所有接口的password请求参数)
@@ -58,7 +68,7 @@ class ApiLoggingMiddleware(MiddlewareMixin):
             'status': True if response.data.get('code') in [2000, ] else False,
             'json_result': {"code": response.data.get('code'), "msg": response.data.get('msg')},
         }
-        operation_log, creat = OperationLog.objects.update_or_create(defaults=info, id=self.operation_log_id)
+        operation_log, creat = OperationLog.objects.update_or_create(defaults=info, id=log_id)
         if not operation_log.request_modular and settings.API_MODEL_MAP.get(request.request_path, None):
             operation_log.request_modular = settings.API_MODEL_MAP[request.request_path]
             operation_log.save()
@@ -69,7 +79,8 @@ class ApiLoggingMiddleware(MiddlewareMixin):
                 if self.methods == 'ALL' or request.method in self.methods:
                     log = OperationLog(request_modular=get_verbose_name(view_func.cls.queryset))
                     log.save()
-                    self.operation_log_id = log.id
+                    # self.operation_log_id = log.id
+                    request.request_data['log_id'] = log.id
 
         return
 
@@ -87,3 +98,58 @@ class ApiLoggingMiddleware(MiddlewareMixin):
             if self.methods == 'ALL' or request.method in self.methods:
                 self.__handle_response(request, response)
         return response
+
+logger = logging.getLogger("healthz")
+class HealthCheckMiddleware(object):
+    """
+    存活检查中间件
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+        # One-time configuration and initialization.
+
+    def __call__(self, request):
+        if request.method == "GET":
+            if request.path == "/readiness":
+                return self.readiness(request)
+            elif request.path == "/healthz":
+                return self.healthz(request)
+        return self.get_response(request)
+
+    def healthz(self, request):
+        """
+        Returns that the server is alive.
+        """
+        return HttpResponse("OK")
+
+    def readiness(self, request):
+        # Connect to each database and do a generic standard SQL query
+        # that doesn't write any data and doesn't depend on any tables
+        # being present.
+        try:
+            from django.db import connections
+            for name in connections:
+                cursor = connections[name].cursor()
+                cursor.execute("SELECT 1;")
+                row = cursor.fetchone()
+                if row is None:
+                    return HttpResponseServerError("db: invalid response")
+        except Exception as e:
+            logger.exception(e)
+            return HttpResponseServerError("db: cannot connect to database.")
+
+        # Call get_stats() to connect to each memcached instance and get it's stats.
+        # This can effectively check if each is online.
+        try:
+            from django.core.cache import caches
+            from django.core.cache.backends.memcached import BaseMemcachedCache
+            for cache in caches.all():
+                if isinstance(cache, BaseMemcachedCache):
+                    stats = cache._cache.get_stats()
+                    if len(stats) != len(cache._servers):
+                        return HttpResponseServerError("cache: cannot connect to cache.")
+        except Exception as e:
+            logger.exception(e)
+            return HttpResponseServerError("cache: cannot connect to cache.")
+
+        return HttpResponse("OK")

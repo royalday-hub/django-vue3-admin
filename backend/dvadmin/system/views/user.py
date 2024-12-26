@@ -115,14 +115,13 @@ class UserUpdateSerializer(CustomModelSerializer):
         ],
     )
 
-    # password = serializers.CharField(required=False, allow_blank=True)
-    # mobile = serializers.CharField(
-    #     max_length=50,
-    #     validators=[
-    #         CustomUniqueValidator(queryset=Users.objects.all(), message="手机号必须唯一")
-    #     ],
-    #     allow_blank=True
-    # )
+    def validate_is_active(self, value):
+        """
+        更改激活状态
+        """
+        if value:
+            self.initial_data["login_error_count"] = 0
+        return value
 
     def save(self, **kwargs):
         data = super().save(**kwargs)
@@ -287,6 +286,7 @@ class UserViewSet(CustomModelViewSet):
             "dept": user.dept_id,
             "is_superuser": user.is_superuser,
             "role": user.role.values_list('id', flat=True),
+            "pwd_change_count":user.pwd_change_count
         }
         if hasattr(connection, 'tenant'):
             result['tenant_id'] = connection.tenant and connection.tenant.id
@@ -326,22 +326,47 @@ class UserViewSet(CustomModelViewSet):
             return ErrorResponse(msg="参数不能为空")
         if new_pwd != new_pwd2:
             return ErrorResponse(msg="两次密码不匹配")
-        verify_password = check_password(old_pwd, self.request.user.password)
+        verify_password = check_password(old_pwd, request.user.password)
         if not verify_password:
-            verify_password = check_password(hashlib.md5(old_pwd.encode(encoding='UTF-8')).hexdigest(), self.request.user.password)
+            old_pwd_md5 = hashlib.md5(old_pwd.encode(encoding='UTF-8')).hexdigest()
+            verify_password = check_password(str(old_pwd_md5), request.user.password)
+            # 创建用户时、自定义密码无法修改问题
+            if not verify_password:
+                old_pwd_md5 = hashlib.md5(old_pwd_md5.encode(encoding='UTF-8')).hexdigest()
+                verify_password = check_password(str(old_pwd_md5), request.user.password)
         if verify_password:
-            request.user.password = make_password(hashlib.md5(new_pwd.encode(encoding='UTF-8')).hexdigest())
+            # request.user.password = make_password(hashlib.md5(new_pwd.encode(encoding='UTF-8')).hexdigest())
+            request.user.password = make_password(new_pwd)
+            request.user.pwd_change_count += 1
             request.user.save()
             return DetailResponse(data=None, msg="修改成功")
         else:
             return ErrorResponse(msg="旧密码不正确")
 
+    @action(methods=["post"], detail=False, permission_classes=[IsAuthenticated])
+    def login_change_password(self, request, *args, **kwargs):
+        """初次登录进行密码修改"""
+        data = request.data
+        new_pwd = data.get("password")
+        new_pwd2 = data.get("password_regain")
+        if new_pwd != new_pwd2:
+            return ErrorResponse(msg="两次密码不匹配")
+        else:
+            request.user.password = make_password(hashlib.md5(new_pwd.encode(encoding='UTF-8')).hexdigest())
+            request.user.pwd_change_count += 1
+            request.user.save()
+            return DetailResponse(data=None, msg="修改成功")
+
     @action(methods=["PUT"], detail=True, permission_classes=[IsAuthenticated])
-    def reset_to_default_password(self, request, *args, **kwargs):
+    def reset_to_default_password(self, request,pk):
         """恢复默认密码"""
-        instance = Users.objects.filter(id=kwargs.get("pk")).first()
+        if not self.request.user.is_superuser:
+            return ErrorResponse(msg="只允许超级管理员对其进行密码重置")
+        instance = Users.objects.filter(id=pk).first()
         if instance:
-            instance.set_password(dispatch.get_system_config_values("base.default_password"))
+            default_password = dispatch.get_system_config_values("base.default_password")
+            md5_pwd = hashlib.md5(default_password.encode(encoding='UTF-8')).hexdigest()
+            instance.password = make_password(md5_pwd)
             instance.save()
             return DetailResponse(data=None, msg="密码重置成功")
         else:
@@ -401,9 +426,12 @@ class UserViewSet(CustomModelViewSet):
                 queryset = self.filter_queryset(self.get_queryset())
         else:
             queryset = self.filter_queryset(self.get_queryset())
+        # print(queryset.values('id','name','dept__id'))
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True, request=request)
+            # print(serializer.data)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True, request=request)
+
         return SuccessResponse(data=serializer.data, msg="获取成功")

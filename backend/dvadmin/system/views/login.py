@@ -4,11 +4,15 @@ from datetime import datetime, timedelta
 from captcha.views import CaptchaStore, captcha_image
 from django.contrib import auth
 from django.contrib.auth import login
+from django.contrib.auth.hashers import check_password, make_password
+from django.db.models import Q
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import serializers
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -83,31 +87,50 @@ class LoginSerializer(TokenObtainPairSerializer):
                 else:
                     self.image_code and self.image_code.delete()
                     raise CustomValidationError("图片验证码错误")
-
-        user = Users.objects.get(username=attrs['username'])
+        try:
+            user = Users.objects.get(
+                Q(username=attrs['username']) | Q(email=attrs['username']) | Q(mobile=attrs['username']))
+        except Users.DoesNotExist:
+            raise CustomValidationError("您登录的账号不存在")
+        except Users.MultipleObjectsReturned:
+            raise CustomValidationError("您登录的账号存在多个,请联系管理员检查登录账号唯一性")
         if not user.is_active:
-            raise CustomValidationError("账号被锁定")
-
-        data = super().validate(attrs)
-        data["name"] = self.user.name
-        data["userId"] = self.user.id
-        data["avatar"] = self.user.avatar
-        data['user_type'] = self.user.user_type
-        dept = getattr(self.user, 'dept', None)
-        if dept:
-            data['dept_info'] = {
-                'dept_id': dept.id,
-                'dept_name': dept.name,
-
-            }
-        role = getattr(self.user, 'role', None)
-        if role:
-            data['role_info'] = role.values('id', 'name', 'key')
-        request = self.context.get("request")
-        request.user = self.user
-        # 记录登录日志
-        save_login_log(request=request)
-        return {"code": 2000, "msg": "请求成功", "data": data}
+            raise CustomValidationError("账号已被锁定,联系管理员解锁")
+        try:
+            # 必须重置用户名为username,否则使用邮箱手机号登录会提示密码错误
+            attrs['username'] = user.username
+            data = super().validate(attrs)
+            data["username"] = self.user.username
+            data["name"] = self.user.name
+            data["userId"] = self.user.id
+            data["avatar"] = self.user.avatar
+            data['user_type'] = self.user.user_type
+            data['pwd_change_count'] = self.user.pwd_change_count
+            dept = getattr(self.user, 'dept', None)
+            if dept:
+                data['dept_info'] = {
+                    'dept_id': dept.id,
+                    'dept_name': dept.name,
+                }
+            role = getattr(self.user, 'role', None)
+            if role:
+                data['role_info'] = role.values('id', 'name', 'key')
+            request = self.context.get("request")
+            request.user = self.user
+            # 记录登录日志
+            save_login_log(request=request)
+            user.login_error_count = 0
+            user.save()
+            return {"code": 2000, "msg": "请求成功", "data": data}
+        except Exception as e:
+            user.login_error_count += 1
+            if user.login_error_count >= 5:
+                user.is_active = False
+                user.save()
+                raise CustomValidationError("账号已被锁定,联系管理员解锁")
+            user.save()
+            count = 5 - user.login_error_count
+            raise CustomValidationError(f"账号/密码错误;重试{count}次后将被锁定~")
 
 
 class LoginView(TokenObtainPairView):

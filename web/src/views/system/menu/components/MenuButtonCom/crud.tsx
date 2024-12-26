@@ -2,6 +2,10 @@ import {AddReq, DelReq, EditReq, dict, CreateCrudOptionsRet, CreateCrudOptionsPr
 import * as api from './api';
 import {auth} from '/@/utils/authFunction'
 import {request} from '/@/utils/service';
+import { successNotification } from '/@/utils/message';
+import { ElMessage } from 'element-plus';
+import { nextTick, ref } from 'vue';
+import XEUtils from 'xe-utils';
 //此处为crudOptions配置
 export const createCrudOptions = function ({crudExpose, context}: CreateCrudOptionsProps): CreateCrudOptionsRet {
     const pageRequest = async () => {
@@ -20,7 +24,42 @@ export const createCrudOptions = function ({crudExpose, context}: CreateCrudOpti
     const addRequest = async ({form}: AddReq) => {
         return await api.AddObj({...form, ...{menu: context!.selectOptions.value.id}});
     };
+    // 记录选中的行
+	const selectedRows = ref<any>([]);
+
+	const onSelectionChange = (changed: any) => {
+		const tableData = crudExpose.getTableData();
+		const unChanged = tableData.filter((row: any) => !changed.includes(row));
+		// 添加已选择的行
+		XEUtils.arrayEach(changed, (item: any) => {
+			const ids = XEUtils.pluck(selectedRows.value, 'id');
+			if (!ids.includes(item.id)) {
+				selectedRows.value = XEUtils.union(selectedRows.value, [item]);
+			}
+		});
+		// 剔除未选择的行
+		XEUtils.arrayEach(unChanged, (unItem: any) => {
+			selectedRows.value = XEUtils.remove(selectedRows.value, (item: any) => item.id !== unItem.id);
+		});
+	};
+	const toggleRowSelection = () => {
+		// 多选后，回显默认勾选
+		const tableRef = crudExpose.getBaseTableRef();
+		const tableData = crudExpose.getTableData();
+		const selected = XEUtils.filter(tableData, (item: any) => {
+			const ids = XEUtils.pluck(selectedRows.value, 'id');
+			return ids.includes(item.id);
+		});
+
+		nextTick(() => {
+			XEUtils.arrayEach(selected, (item) => {
+				tableRef.toggleRowSelection(item, true);
+			});
+		});
+	};
+    
     return {
+        selectedRows,
         crudOptions: {
             pagination:{
                 show:false
@@ -40,6 +79,22 @@ export const createCrudOptions = function ({crudExpose, context}: CreateCrudOpti
                     add: {
                         show: auth('btn:Create')
                     },
+                    batchAdd: {
+						show: true,
+						type: 'primary',
+						text: '批量生成',
+						click: async () => {
+							if (context!.selectOptions.value.id == undefined) {
+								ElMessage.error('请选择菜单');
+								return;
+							}
+							const result = await api.BatchAdd({ menu: context!.selectOptions.value.id });
+							if (result.code == 2000) {
+								successNotification(result.msg);
+								crudExpose.doRefresh();
+							}
+						},
+					},
                 },
             },
             rowHandle: {
@@ -66,6 +121,11 @@ export const createCrudOptions = function ({crudExpose, context}: CreateCrudOpti
                 editRequest,
                 delRequest,
             },
+            table: {
+				rowKey: 'id', //设置你的主键id， 默认rowKey=id
+				onSelectionChange,
+				onRefreshed: () => toggleRowSelection(),
+			},
             form: {
                 col: {span: 24},
                 labelWidth: '100px',
@@ -75,6 +135,16 @@ export const createCrudOptions = function ({crudExpose, context}: CreateCrudOpti
                 },
             },
             columns: {
+                $checked: {
+					title: '选择',
+					form: { show: false },
+					column: {
+						type: 'selection',
+						align: 'center',
+						width: '70px',
+						columnSetDisabled: true, //禁止在列设置中选择
+					},
+				},
                 _index: {
                     title: '序号',
                     form: {show: false},

@@ -1,5 +1,7 @@
 import hashlib
 import os
+from time import time
+from pathlib import PurePosixPath
 
 from django.contrib.auth.models import AbstractUser, UserManager
 from django.db import models
@@ -70,6 +72,8 @@ class Users(CoreModel, AbstractUser):
         blank=True,
         help_text="关联部门",
     )
+    login_error_count = models.IntegerField(default=0, verbose_name="登录错误次数", help_text="登录错误次数")
+    pwd_change_count = models.IntegerField(default=0,blank=True, verbose_name="密码修改次数", help_text="密码修改次数")
     objects = CustomUserManager()
 
     def set_password(self, raw_password):
@@ -162,6 +166,7 @@ class Menu(CoreModel):
         (1, "是"),
     )
     is_link = models.BooleanField(default=False, verbose_name="是否外链", help_text="是否外链")
+    link_url = models.CharField(max_length=255, verbose_name="链接地址", null=True, blank=True, help_text="链接地址")
     is_catalog = models.BooleanField(default=False, verbose_name="是否目录", help_text="是否目录")
     web_path = models.CharField(max_length=128, verbose_name="路由地址", null=True, blank=True, help_text="路由地址")
     component = models.CharField(max_length=128, verbose_name="组件地址", null=True, blank=True, help_text="组件地址")
@@ -171,7 +176,29 @@ class Menu(CoreModel):
     cache = models.BooleanField(default=False, blank=True, verbose_name="是否页面缓存", help_text="是否页面缓存")
     visible = models.BooleanField(default=True, blank=True, verbose_name="侧边栏中是否显示",
                                   help_text="侧边栏中是否显示")
+    is_iframe = models.BooleanField(default=False, blank=True, verbose_name="框架外显示", help_text="框架外显示")
+    is_affix = models.BooleanField(default=False, blank=True, verbose_name="是否固定", help_text="是否固定")
 
+    @classmethod
+    def get_all_parent(cls, id: int, all_list=None, nodes=None):
+        """
+        递归获取给定ID的所有层级
+        :param id: 参数ID
+        :param all_list: 所有列表
+        :param nodes: 递归列表
+        :return: nodes
+        """
+        if not all_list:
+            all_list = Menu.objects.values("id", "name", "parent")
+        if nodes is None:
+            nodes = []
+        for ele in all_list:
+            if ele.get("id") == id:
+                parent_id = ele.get("parent")
+                if parent_id is not None:
+                    cls.get_all_parent(parent_id, all_list, nodes)
+                nodes.append(ele)
+        return nodes
     class Meta:
         db_table = table_prefix + "system_menu"
         verbose_name = "菜单表"
@@ -381,6 +408,18 @@ class FileList(CoreModel):
     mime_type = models.CharField(max_length=100, blank=True, verbose_name="Mime类型", help_text="Mime类型")
     size = models.CharField(max_length=36, blank=True, verbose_name="文件大小", help_text="文件大小")
     md5sum = models.CharField(max_length=36, blank=True, verbose_name="文件md5", help_text="文件md5")
+    UPLOAD_METHOD_CHOIDES = (
+        (0, '默认上传'),
+        (1, '文件选择器上传'),
+    )
+    upload_method = models.SmallIntegerField(default=0, blank=True, null=True, choices=UPLOAD_METHOD_CHOIDES, verbose_name='上传方式', help_text='上传方式')
+    FILE_TYPE_CHOIDES = (
+        (0, '图片'),
+        (1, '视频'),
+        (2, '音频'),
+        (3, '其他'),
+    )
+    file_type = models.SmallIntegerField(default=3, choices=FILE_TYPE_CHOIDES, blank=True, null=True, verbose_name='文件类型', help_text='文件类型')
 
     def save(self, *args, **kwargs):
         if not self.md5sum:  # file is new
@@ -462,7 +501,7 @@ class SystemConfig(CoreModel):
         help_text="父级",
     )
     title = models.CharField(max_length=50, verbose_name="标题", help_text="标题")
-    key = models.CharField(max_length=20, verbose_name="键", help_text="键", db_index=True)
+    key = models.CharField(max_length=100, verbose_name="键", help_text="键", db_index=True)
     value = models.JSONField(max_length=100, verbose_name="值", help_text="值", null=True, blank=True)
     sort = models.IntegerField(default=0, verbose_name="排序", help_text="排序", blank=True)
     status = models.BooleanField(default=True, verbose_name="启用状态", help_text="启用状态")
@@ -571,3 +610,41 @@ class MessageCenterTargetUser(CoreModel):
         db_table = table_prefix + "message_center_target_user"
         verbose_name = "消息中心目标用户表"
         verbose_name_plural = verbose_name
+
+
+def media_file_name_downloadcenter(instance:'DownloadCenter', filename):
+    h = instance.md5sum
+    basename, ext = os.path.splitext(filename)
+    return PurePosixPath("files", "dlct", h[:1], h[1:2], basename + '-' + str(time()).replace('.', '') + ext.lower())
+
+
+class DownloadCenter(CoreModel):
+    TASK_STATUS_CHOICES = [
+        (0, '任务已创建'),
+        (1, '任务进行中'),
+        (2, '任务完成'),
+        (3, '任务失败'),
+    ]
+    task_name = models.CharField(max_length=255, verbose_name="任务名称", help_text="任务名称")
+    task_status = models.SmallIntegerField(default=0, choices=TASK_STATUS_CHOICES, verbose_name='是否可下载', help_text='是否可下载')
+    file_name = models.CharField(max_length=255, null=True, blank=True, verbose_name="文件名", help_text="文件名")
+    url = models.FileField(upload_to=media_file_name_downloadcenter, null=True, blank=True)
+    size = models.BigIntegerField(default=0, verbose_name="文件大小", help_text="文件大小")
+    md5sum = models.CharField(max_length=36, null=True, blank=True, verbose_name="文件md5", help_text="文件md5")
+
+    def save(self, *args, **kwargs):
+        if self.url:
+            if not self.md5sum:  # file is new
+                md5 = hashlib.md5()
+                for chunk in self.url.chunks():
+                    md5.update(chunk)
+                self.md5sum = md5.hexdigest()
+            if not self.size:
+                self.size = self.url.size
+        super(DownloadCenter, self).save(*args, **kwargs)
+
+    class Meta:
+        db_table = table_prefix + "download_center"
+        verbose_name = "下载中心"
+        verbose_name_plural = verbose_name
+        ordering = ("-create_datetime",)

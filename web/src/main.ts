@@ -1,7 +1,7 @@
 import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router';
-import { directive } from '/@/utils/directive';
+import { directive } from '/@/directive/index';
 import { i18n } from '/@/i18n';
 import other from '/@/utils/other';
 import '/@/assets/style/tailwind.css'; // 先引入tailwind css, 以免element-plus冲突
@@ -32,7 +32,6 @@ import 'vxe-table/lib/style.css'
 
 import '/@/assets/style/reset.scss';
 import 'element-tree-line/dist/style.css'
-import {FastCrud} from "@fast-crud/fast-crud";
 
 let forIconfont = analyzingIconForIconfont(iconfont); //解析class
 iconList.addIcon(forIconfont.list); // 添加iconfont dvadmin3的icon
@@ -55,10 +54,12 @@ other.elSvg(app);
 
 
 app.use(VXETable)
-// @ts-ignore
-app.use(pinia).use(router).use(ElementPlus, { i18n: i18n.global.t }).use(i18n).use(VueGridLayout).use(fastCrud).mount('#app');
-
-//关闭警告
-app.use(FastCrud,{logger:{off:{tableColumns:false}}})
+app.use(pinia)
+	.use(router)
+	.use(ElementPlus, { i18n: i18n.global.t })
+	.use(i18n)
+	.use(VueGridLayout)
+	.use(fastCrud)
+	.mount('#app');
 
 app.config.globalProperties.mittBus = mitt();

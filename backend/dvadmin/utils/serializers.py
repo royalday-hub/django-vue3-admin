@@ -51,7 +51,7 @@ class CustomModelSerializer(DynamicFieldsMixin, ModelSerializer):
         format="%Y-%m-%d %H:%M:%S", required=False, read_only=True
     )
     update_datetime = serializers.DateTimeField(
-        format="%Y-%m-%d %H:%M:%S", required=False
+        format="%Y-%m-%d %H:%M:%S", required=False, read_only=True
     )
 
     def __init__(self, instance=None, data=empty, request=None, **kwargs):
@@ -70,11 +70,11 @@ class CustomModelSerializer(DynamicFieldsMixin, ModelSerializer):
                     validated_data[self.creator_field_id] = self.request.user
 
                 if (
-                    self.dept_belong_id_field_name in self.fields.fields
-                    and validated_data.get(self.dept_belong_id_field_name, None) is None
+                        self.dept_belong_id_field_name in self.fields.fields
+                        and validated_data.get(self.dept_belong_id_field_name, None) is None
                 ):
                     validated_data[self.dept_belong_id_field_name] = getattr(
-                        self.request.user, "dept_id", None
+                        self.request.user, "dept_id", validated_data.get(self.dept_belong_id_field_name, None)
                     )
         return super().create(validated_data)
 

@@ -57,7 +57,7 @@ const getData = async () => {
 		const result = XEUtils.toArrayTree(res.data, {
 			parentKey: 'parent',
 			children: 'children',
-			strict: true,
+			//strict: true,
 		});
 
 		deptTreeData.value = result;
@@ -133,7 +133,7 @@ onMounted(() => {
 }
 
 .dept-left {
-	background-color: #fff;
+	background-color: var(--el-fill-color-blank);;
 	border-radius: 0 8px 8px 0;
 	padding: 10px;
 }

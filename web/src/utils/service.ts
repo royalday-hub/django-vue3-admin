@@ -10,6 +10,7 @@ import { errorLog, errorCreate } from './tools.ts';
 import { Local, Session } from '/@/utils/storage';
 import qs from 'qs';
 import { getBaseURL } from './baseUrl';
+import { successMessage } from './message.js';
 /**
  * @description 创建请求实例
  */
@@ -76,13 +77,13 @@ function createService() {
 						// window.location.reload();
 						break;
 					case 401:
-						Local.clear();
+						// Local.clear();
 						Session.clear();
 						dataAxios.msg = '登录认证失败，请重新登录';
 						ElMessageBox.alert(dataAxios.msg, '提示', {
 							confirmButtonText: 'OK',
 							callback: (action: Action) => {
-								window.location.reload();
+								// window.location.reload();
 							},
 						});
 						errorCreate(`${dataAxios.msg}: ${response.config.url}`);
@@ -96,12 +97,13 @@ function createService() {
 						return dataAxios;
 					case 4000:
 						errorCreate(`${dataAxios.msg}: ${response.config.url}`);
-						return dataAxios;
+						break;
 					default:
 						// 不是正确的 code
 						errorCreate(`${dataAxios.msg}: ${response.config.url}`);
-						return dataAxios;
+						break;
 				}
+				return Promise.reject(dataAxios);
 			}
 		},
 		(error) => {
@@ -111,7 +113,7 @@ function createService() {
 					error.message = '请求错误';
 					break;
 				case 401:
-					Local.clear();
+					// Local.clear();
 					Session.clear();
 					error.message = '登录授权过期，请重新登录';
 					ElMessageBox.alert(error.message, '提示', {
@@ -203,6 +205,8 @@ export const requestForMock = createRequestFunction(serviceForMock);
  * @param filename
  */
 export const downloadFile = function ({ url, params, method, filename = '文件导出' }: any) {
+	// return request({ url: url, method: method, params: params })
+	// 	.then((res: any) => successMessage(res.msg));
 	request({
 		url: url,
 		method: method,
@@ -210,6 +214,9 @@ export const downloadFile = function ({ url, params, method, filename = '文件�
 		responseType: 'blob'
 		// headers: {Accept: 'application/vnd.openxmlformats-officedocument'}
 	}).then((res: any) => {
+		// console.log(res.headers['content-type']); // 根据content-type不同来判断是否异步下载
+		// if (res.headers && res.headers['Content-type'] === 'application/json') return successMessage('导入任务已创建，请前往‘下载中心’等待下载');
+		if (res.headers['content-type'] === 'application/json') return successMessage('导入任务已创建，请前往‘下载中心’等待下载');
 		const xlsxName = window.decodeURI(res.headers['content-disposition'].split('=')[1])
 		const fileName = xlsxName || `${filename}.xlsx`
 		if (res) {

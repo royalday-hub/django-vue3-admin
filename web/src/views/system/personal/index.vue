@@ -153,7 +153,7 @@
 				center
 			>
 				<el-form-item label="原密码" required prop="oldPassword">
-					<el-input v-model="userPasswordInfo.oldPassword" placeholder="请输入原始密码" clearable></el-input>
+					<el-input type="password" v-model="userPasswordInfo.oldPassword" placeholder="请输入原始密码" show-password clearable></el-input>
 				</el-form-item>
 				<el-form-item required prop="newPassword" label="新密码">
 					<el-input type="password" v-model="userPasswordInfo.newPassword" placeholder="请输入新密码" show-password clearable></el-input>
@@ -182,6 +182,8 @@ import { useRouter } from 'vue-router';
 import { useUserInfo } from '/@/stores/userInfo';
 import { successMessage } from '/@/utils/message';
 import {dictionary} from "/@/utils/dictionary";
+import {Md5} from "ts-md5";
+const router = useRouter();
 
 // 头像裁剪组件
 const avatarSelector = defineAsyncComponent(() => import('/@/components/avatarSelector/index.vue'));
@@ -333,6 +335,10 @@ const settingPassword = () => {
 		if (valid) {
 			api.UpdatePassword(userPasswordInfo).then((res: any) => {
 				ElMessage.success('密码修改成功');
+        setTimeout(() => {
+          Session.remove('token');
+          router.push('/login');
+			}, 1000);
 			});
 		} else {
 			// 校验失败
@@ -348,7 +354,8 @@ const uploadImg = (data: any) => {
 	api.uploadAvatar(formdata).then((res: any) => {
 		if (res.code === 2000) {
 			selectImgVisible.value = false;
-			state.personalForm.avatar = getBaseURL() + res.data.url;
+			// state.personalForm.avatar = getBaseURL() + res.data.url;
+			state.personalForm.avatar = res.data.url;
 			api.updateUserInfo(state.personalForm).then((res: any) => {
 				successMessage('更新成功');
 				getUserInfo();

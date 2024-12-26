@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import { defineConfig, loadEnv, ConfigEnv } from 'vite';
 import vueSetupExtend from 'vite-plugin-vue-setup-extend';
 import vueJsx from '@vitejs/plugin-vue-jsx'
+import { generateVersionFile } from "/@/utils/upgrade";
 
 const pathResolve = (dir: string) => {
 	return resolve(__dirname, '.', dir);
@@ -12,10 +13,13 @@ const alias: Record<string, string> = {
 	'/@': pathResolve('./src/'),
 	'@views': pathResolve('./src/views'),
 	'vue-i18n': 'vue-i18n/dist/vue-i18n.cjs.js',
+	'@dvaformflow':pathResolve('./src/viwes/plugins/dvaadmin_form_flow/src/')
 };
 
 const viteConfig = defineConfig((mode: ConfigEnv) => {
 	const env = loadEnv(mode.mode, process.cwd());
+	// 当Vite构建时，生成版本文件
+	generateVersionFile()
 	return {
 		plugins: [vue(), vueJsx(), vueSetupExtend()],
 		root: process.cwd(),
@@ -27,7 +31,7 @@ const viteConfig = defineConfig((mode: ConfigEnv) => {
 		server: {
 			host: '0.0.0.0',
 			port: env.VITE_PORT as unknown as number,
-			open: true,
+			open: false,
 			hmr: true,
 			proxy: {
 				'/gitee': {
@@ -39,7 +43,7 @@ const viteConfig = defineConfig((mode: ConfigEnv) => {
 			},
 		},
 		build: {
-			outDir: 'dist',
+			outDir: env.VITE_DIST_PATH || 'dist',
 			chunkSizeWarningLimit: 1500,
 			rollupOptions: {
 				output: {
